@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: m7s-teli-host
+    runtime: python
+    buildCommand: ""
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
