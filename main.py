@@ -1,35 +1,40 @@
 import os
 import subprocess
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-RUNNING_BOTS = {}
+running_bots = {}
 
 keyboard = [
     ["📤 Upload File", "📂 Check Files"],
-    ["🟢 My Running Bots", "⛔ Stop Bot"],
+    ["🟢 My Running Bots", "⛔ Stop All Bots"],
 ]
 
 markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-# /start command
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not allowed.")
         return
 
     await update.message.reply_text(
-        "🔥 *M7S TELI BOT HOSTING*\n\nSend a Python/JS/ZIP file to run bot.",
-        parse_mode="Markdown",
+        "🔥 M7S TELI BOT HOSTING READY\n\nSend .py file to run bot.",
         reply_markup=markup,
     )
 
 
-# Handle file upload
+# file upload
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -41,57 +46,42 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     path = f"files/{doc.file_name}"
     await file.download_to_drive(path)
 
-    await update.message.reply_text(f"✅ File saved:\n`{doc.file_name}`", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Saved: {doc.file_name}")
 
-    # auto run .py files
     if doc.file_name.endswith(".py"):
         process = subprocess.Popen(["python", path])
-        RUNNING_BOTS[doc.file_name] = process
-        await update.message.reply_text(f"🚀 Bot started:\n`{doc.file_name}`", parse_mode="Markdown")
+        running_bots[doc.file_name] = process
+        await update.message.reply_text(f"🚀 Started: {doc.file_name}")
 
 
-# Show files
+# check files
 async def check_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
     if not os.path.exists("files"):
-        await update.message.reply_text("📂 No files uploaded.")
+        await update.message.reply_text("No files uploaded.")
         return
 
     files = os.listdir("files")
-    if not files:
-        await update.message.reply_text("📂 No files uploaded.")
-        return
-
-    await update.message.reply_text("📁 Files:\n" + "\n".join(files))
+    await update.message.reply_text("\n".join(files) if files else "No files.")
 
 
-# Show running bots
+# running bots
 async def running(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not running_bots:
+        await update.message.reply_text("No running bots.")
         return
 
-    if not RUNNING_BOTS:
-        await update.message.reply_text("🔴 No bots running.")
-        return
-
-    await update.message.reply_text("🟢 Running:\n" + "\n".join(RUNNING_BOTS.keys()))
+    await update.message.reply_text("\n".join(running_bots.keys()))
 
 
-# Stop all bots
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    for p in RUNNING_BOTS.values():
+# stop bots
+async def stop_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for p in running_bots.values():
         p.kill()
 
-    RUNNING_BOTS.clear()
+    running_bots.clear()
     await update.message.reply_text("⛔ All bots stopped.")
 
 
-# Main
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -99,9 +89,9 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
     app.add_handler(MessageHandler(filters.Regex("📂 Check Files"), check_files))
     app.add_handler(MessageHandler(filters.Regex("🟢 My Running Bots"), running))
-    app.add_handler(MessageHandler(filters.Regex("⛔ Stop Bot"), stop))
+    app.add_handler(MessageHandler(filters.Regex("⛔ Stop All Bots"), stop_all))
 
-    print("🔥 M7S TELI BOT HOSTING STARTED")
+    print("M7S HOSTING STARTED")
     app.run_polling()
 
 
