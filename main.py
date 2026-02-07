@@ -1,116 +1,109 @@
 import os
 import subprocess
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN = int(os.getenv("ADMIN_ID"))
+TOKEN = os.getenv("TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-FILES_DIR = "files"
-os.makedirs(FILES_DIR, exist_ok=True)
-
-running_processes = {}
+RUNNING_BOTS = {}
 
 keyboard = [
-    ["📤 Upload File", "📁 Check Files"],
-    ["🟢 My Running Bots", "📊 My Stats"],
-    ["📞 Contact Owner"]
+    ["📤 Upload File", "📂 Check Files"],
+    ["🟢 My Running Bots", "⛔ Stop Bot"],
 ]
 
 markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ You are not allowed.")
+        return
+
     await update.message.reply_text(
-        "🔥 Welcome to M7S TELI BOT HOSTING\n\nUpload and run your Telegram bots.",
-        reply_markup=markup
+        "🔥 *M7S TELI BOT HOSTING*\n\nSend a Python/JS/ZIP file to run bot.",
+        parse_mode="Markdown",
+        reply_markup=markup,
     )
 
 
-async def upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Handle file upload
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
     doc = update.message.document
-    if not doc:
-        return
-
-    if not doc.file_name.endswith((".py", ".js", ".zip")):
-        await update.message.reply_text("❌ Only .py .js .zip allowed.")
-        return
-
-    path = os.path.join(FILES_DIR, doc.file_name)
     file = await doc.get_file()
+
+    os.makedirs("files", exist_ok=True)
+    path = f"files/{doc.file_name}"
     await file.download_to_drive(path)
 
-    await update.message.reply_text(f"✅ Uploaded: {doc.file_name}")
+    await update.message.reply_text(f"✅ File saved:\n`{doc.file_name}`", parse_mode="Markdown")
+
+    # auto run .py files
+    if doc.file_name.endswith(".py"):
+        process = subprocess.Popen(["python", path])
+        RUNNING_BOTS[doc.file_name] = process
+        await update.message.reply_text(f"🚀 Bot started:\n`{doc.file_name}`", parse_mode="Markdown")
 
 
+# Show files
 async def check_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    files = os.listdir(FILES_DIR)
+    if update.effective_user.id != ADMIN_ID:
+        return
 
+    if not os.path.exists("files"):
+        await update.message.reply_text("📂 No files uploaded.")
+        return
+
+    files = os.listdir("files")
     if not files:
-        await update.message.reply_text("No files uploaded.")
+        await update.message.reply_text("📂 No files uploaded.")
         return
 
-    await update.message.reply_text("\n".join(files))
+    await update.message.reply_text("📁 Files:\n" + "\n".join(files))
 
 
-async def run_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.from_user.id != ADMIN:
-        return
-
-    if not context.args:
-        await update.message.reply_text("Use: /run filename.py")
-        return
-
-    filename = context.args[0]
-    path = os.path.join(FILES_DIR, filename)
-
-    if not os.path.exists(path):
-        await update.message.reply_text("File not found.")
-        return
-
-    process = subprocess.Popen(["python", path])
-    running_processes[filename] = process.pid
-
-    await update.message.reply_text(f"Running {filename}")
-
-
+# Show running bots
 async def running(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not running_processes:
-        await update.message.reply_text("No bots running.")
+    if update.effective_user.id != ADMIN_ID:
         return
 
-    text = "\n".join(running_processes.keys())
-    await update.message.reply_text(text)
+    if not RUNNING_BOTS:
+        await update.message.reply_text("🔴 No bots running.")
+        return
+
+    await update.message.reply_text("🟢 Running:\n" + "\n".join(RUNNING_BOTS.keys()))
 
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        f"Files: {len(os.listdir(FILES_DIR))}\nRunning: {len(running_processes)}"
-    )
+# Stop all bots
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    for p in RUNNING_BOTS.values():
+        p.kill()
+
+    RUNNING_BOTS.clear()
+    await update.message.reply_text("⛔ All bots stopped.")
 
 
-async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Owner: @YourUsername")
+# Main
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+    app.add_handler(MessageHandler(filters.Regex("📂 Check Files"), check_files))
+    app.add_handler(MessageHandler(filters.Regex("🟢 My Running Bots"), running))
+    app.add_handler(MessageHandler(filters.Regex("⛔ Stop Bot"), stop))
+
+    print("🔥 M7S TELI BOT HOSTING STARTED")
+    app.run_polling()
 
 
-async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    t = update.message.text
-
-    if t == "📁 Check Files":
-        await check_files(update, context)
-    elif t == "🟢 My Running Bots":
-        await running(update, context)
-    elif t == "📊 My Stats":
-        await stats(update, context)
-    elif t == "📞 Contact Owner":
-        await contact(update, context)
-
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("run", run_file))
-app.add_handler(MessageHandler(filters.Document.ALL, upload))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buttons))
-
-app.run_polling()
+if __name__ == "__main__":
+    main()
